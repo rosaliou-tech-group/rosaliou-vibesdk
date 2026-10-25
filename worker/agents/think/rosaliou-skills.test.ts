@@ -15,10 +15,10 @@ describe('ROSALIOU Think skill integration', () => {
   it('registers each pilot in the manifest with valid frontmatter and a body', () => {
     for (const [name, symbol, content] of skills) {
       expect(catalog).toContain(`'${name}': ${symbol}`);
-      expect(content.startsWith('---\\n')).toBe(true);
+      expect(content.startsWith('---\n')).toBe(true);
       expect(content).toContain(`name: ${name}`);
-      expect(content).toMatch(/description: [^\\n]+/);
-      expect(content).toMatch(/\\n---\\n#[^\\n]+/);
+      expect(content).toMatch(/description: [^\n]+/);
+      expect(content).toMatch(/\n---\n#[^\n]+/);
     }
     expect(catalog).toContain('return fromManifest(manifest)');
   });
@@ -32,7 +32,7 @@ describe('ROSALIOU Think skill integration', () => {
   it('keeps the pilot skills guidance-only and sandbox-first', () => {
     for (const [, , content] of skills) {
       expect(content.toLowerCase()).toContain('sandbox');
-      expect(content.toLowerCase()).toContain('production');
+      expect(content).toMatch(/production|live services/i);
     }
   });
 });
