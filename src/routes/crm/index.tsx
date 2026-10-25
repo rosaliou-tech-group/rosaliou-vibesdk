@@ -1,0 +1,56 @@
+import { useEffect, useState } from 'react';
+type Org={id:string;name:string;role:string};
+type Contact={id:string;display_name:string;email:string|null;company:string|null};
+type Lead={id:string;title:string;stage:string;contact_name:string};
+const stages=['new','qualified','proposal','negotiation','won','lost'];
+async function api<T>(path:string,options?:RequestInit):Promise<T>{
+ const response=await fetch('/api/crm'+path,{credentials:'same-origin',...options,headers:{'Content-Type':'application/json',...options?.headers}});
+ const data=await response.json();
+ if(!response.ok)throw new Error(data.error||'CRM request failed');
+ return data as T;
+}
+export default function CrmPage(){
+ const [orgs,setOrgs]=useState<Org[]>([]);
+ const [org,setOrg]=useState('');
+ const [contacts,setContacts]=useState<Contact[]>([]);
+ const [leads,setLeads]=useState<Lead[]>([]);
+ const [name,setName]=useState('');
+ const [email,setEmail]=useState('');
+ const [company,setCompany]=useState('');
+ const [orgName,setOrgName]=useState('');
+ const [title,setTitle]=useState('');
+ const [contactId,setContactId]=useState('');
+ const [error,setError]=useState('');
+ const [busy,setBusy]=useState(false);
+ const selected=orgs.find(o=>o.id===org);
+ const canWrite=selected && ['owner','admin','sales'].includes(selected.role);
+ async function refresh(){if(!org)return;const [c,l]=await Promise.all([api<{contacts:Contact[]}>('/'+org+'/contacts'),api<{leads:Lead[]}>('/'+org+'/leads')]);setContacts(c.contacts);setLeads(l.leads);}
+ useEffect(()=>{api<{organizations:Org[]}>('/organizations').then(r=>{setOrgs(r.organizations);setOrg(r.organizations[0]?.id??'')}).catch(e=>setError(String(e)))},[]);
+ useEffect(()=>{refresh().catch(e=>setError(String(e)))},[org]);
+ async function perform(fn:()=>Promise<unknown>){setBusy(true);setError('');try{await fn();await refresh()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}
+ return <main style={{maxWidth:1100,margin:'2rem auto',padding:'1rem'}}>
+  <h1>ROSALIOU TECH · CRM</h1>
+  <p>Contactos, empresas y oportunidades comerciales por organización.</p>
+  {error&&<p role="alert" style={{color:'crimson'}}>{error}</p>}
+  <section><label>Organización <select value={org} onChange={e=>setOrg(e.target.value)}><option value="">Seleccionar</option>{orgs.map(o=><option key={o.id} value={o.id}>{o.name} ({o.role})</option>)}</select></label>
+   <form onSubmit={e=>{e.preventDefault();void perform(async()=>{const r=await api<{id:string}>('/organizations',{method:'POST',body:JSON.stringify({name:orgName})});setOrgs(prev=>[...prev,{id:r.id,name:orgName,role:'owner'}]);setOrg(r.id);setOrgName('')})}}>
+    <input aria-label="Nueva organización" value={orgName} onChange={e=>setOrgName(e.target.value)} placeholder="Nueva organización" required/><button disabled={busy}>Crear organización</button>
+   </form></section>
+  {org&&<><section><h2>Contactos y empresas</h2>
+   {canWrite&&<form onSubmit={e=>{e.preventDefault();void perform(async()=>{await api('/'+org+'/contacts',{method:'POST',body:JSON.stringify({displayName:name,email,company})});setName('');setEmail('');setCompany('')})}}>
+    <input value={name} onChange={e=>setName(e.target.value)} placeholder="Nombre" aria-label="Nombre de contacto" required/>
+    <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" aria-label="Email"/>
+    <input value={company} onChange={e=>setCompany(e.target.value)} placeholder="Empresa" aria-label="Empresa"/>
+    <button disabled={busy}>Guardar contacto</button>
+   </form>}
+   <table><thead><tr><th>Nombre</th><th>Empresa</th><th>Correo</th></tr></thead><tbody>{contacts.map(c=><tr key={c.id}><td>{c.display_name}</td><td>{c.company}</td><td>{c.email}</td></tr>)}</tbody></table>
+  </section><section><h2>Oportunidades y seguimiento</h2>
+   {canWrite&&<form onSubmit={e=>{e.preventDefault();void perform(async()=>{await api('/'+org+'/leads',{method:'POST',body:JSON.stringify({title,contactId})});setTitle('');setContactId('')})}}>
+    <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Oportunidad" aria-label="Oportunidad" required/>
+    <select aria-label="Contacto" required value={contactId} onChange={e=>setContactId(e.target.value)}><option value="">Contacto</option>{contacts.map(c=><option key={c.id} value={c.id}>{c.display_name}</option>)}</select>
+    <button disabled={busy}>Crear oportunidad</button>
+   </form>}
+   <table><thead><tr><th>Oportunidad</th><th>Contacto</th><th>Etapa</th></tr></thead><tbody>{leads.map(l=><tr key={l.id}><td>{l.title}</td><td>{l.contact_name}</td><td>{canWrite?<select aria-label={'Etapa de '+l.title} value={l.stage} disabled={busy} onChange={e=>{const stage=e.target.value;void perform(()=>api('/'+org+'/leads/'+l.id+'/stage',{method:'PATCH',body:JSON.stringify({stage})}))}}>{stages.map(s=><option key={s}>{s}</option>)}</select>:l.stage}</td></tr>)}</tbody></table>
+  </section></>}
+ </main>;
+}
