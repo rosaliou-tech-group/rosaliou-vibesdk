@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+	AddressBookIcon,
 	BookmarkSimpleIcon,
 	CaretRightIcon,
 	CompassIcon,
@@ -351,6 +352,7 @@ export function AppSidebar() {
 								</OrangeButton>
 							)}
 
+							{user && <Sidebar.MenuButton active={pathname === '/crm'} icon={<AddressBookIcon className="size-4" />} tooltip="CRM" onClick={() => navigate('/crm')}>CRM</Sidebar.MenuButton>}
 							<Sidebar.MenuButton
 								active={pathname === '/discover'}
 								icon={
