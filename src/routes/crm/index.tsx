@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 type Org={id:string;name:string;role:string};
 type Contact={id:string;display_name:string;email:string|null;company:string|null};
 type Lead={id:string;title:string;stage:string;contact_name:string};
@@ -24,9 +24,9 @@ export default function CrmPage(){
  const [busy,setBusy]=useState(false);
  const selected=orgs.find(o=>o.id===org);
  const canWrite=selected && ['owner','admin','sales'].includes(selected.role);
- async function refresh(){if(!org)return;const [c,l]=await Promise.all([api<{contacts:Contact[]}>('/'+org+'/contacts'),api<{leads:Lead[]}>('/'+org+'/leads')]);setContacts(c.contacts);setLeads(l.leads);}
+ const refresh=useCallback(async()=>{if(!org){setContacts([]);setLeads([]);return;}const [c,l]=await Promise.all([api<{contacts:Contact[]}>('/'+org+'/contacts'),api<{leads:Lead[]}>('/'+org+'/leads')]);setContacts(c.contacts);setLeads(l.leads);},[org]);
  useEffect(()=>{api<{organizations:Org[]}>('/organizations').then(r=>{setOrgs(r.organizations);setOrg(r.organizations[0]?.id??'')}).catch(e=>setError(String(e)))},[]);
- useEffect(()=>{refresh().catch(e=>setError(String(e)))},[org]);
+ useEffect(()=>{void refresh().catch(e=>setError(String(e)))},[refresh]);
  async function perform(fn:()=>Promise<unknown>){setBusy(true);setError('');try{await fn();await refresh()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}
  return <main style={{maxWidth:1100,margin:'2rem auto',padding:'1rem'}}>
   <h1>ROSALIOU TECH · CRM</h1>
