@@ -25,7 +25,8 @@ describe('ROSALIOU Think skill integration', () => {
 
   it('connects the manifest source to ThinkAgent getSkills', () => {
     expect(agent).toContain("import { createThinkSkillSource } from './skills'");
-    expect(agent).toMatch(/getSkills\\(\\)\\s*:\\s*SkillSource\\[\\]\\s*\\{\\s*return \\[createThinkSkillSource\\(\\)\\]/);
+    expect(agent).toContain('override getSkills(): SkillSource[]');
+    expect(agent).toContain('return [createThinkSkillSource()]');
   });
 
   it('keeps the pilot skills guidance-only and sandbox-first', () => {
