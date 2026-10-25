@@ -17,6 +17,7 @@ import FRONTEND_DESIGN_LANDING_PAGE from './skills/frontend-design-landing-page/
 import FRONTEND_DESIGN_SAAS from './skills/frontend-design-saas/SKILL.md?raw';
 import ROSALIOU_RECON_PILOT from './skills/rosaliou-recon-pilot/SKILL.md?raw';
 import ROSALIOU_ARCHITECTURE_PILOT from './skills/rosaliou-architecture-pilot/SKILL.md?raw';
+import ROSALIOU_DESIGN_PILOT from './skills/rosaliou-design-pilot/SKILL.md?raw';
 
 /** Raw `SKILL.md` contents keyed by their source directory name. */
 const RAW_SKILLS: Record<string, string> = {
@@ -26,6 +27,7 @@ const RAW_SKILLS: Record<string, string> = {
 	'frontend-design-saas': FRONTEND_DESIGN_SAAS,
 	'rosaliou-recon-pilot': ROSALIOU_RECON_PILOT,
 	'rosaliou-architecture-pilot': ROSALIOU_ARCHITECTURE_PILOT,
+	'rosaliou-design-pilot': ROSALIOU_DESIGN_PILOT,
 };
 
 function buildEntries(): SkillManifestEntry[] {
