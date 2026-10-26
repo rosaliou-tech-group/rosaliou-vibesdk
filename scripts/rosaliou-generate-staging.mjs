@@ -35,8 +35,12 @@ if(c.containers?.length) c.containers=c.containers.map(x=>({...x,max_instances:1
 // alias, Markdown bundling, version metadata, loader and static SPA assets.
 if(!c.assets || !c.worker_loaders || !c.migrations || !c.durable_objects) throw new Error('Missing required upstream VibeSDK architecture; abort.');
 const raw=JSON.stringify(c,null,2);
-const unsafe=['vibesdk-production','vibesdk-default-namespace','vibesdk-templates','build.cloudflare.dev','c4721a2b-b96a-428a-8b2a-b3d255b307e9','f066f3c2e4824981b48e8586c04db9c1','2101','2102'];
-if(unsafe.some(s=>raw.includes(s)))throw new Error('Staging config still references production resources. Refusing to write.');
+const unsafe=['vibesdk-production','vibesdk-default-namespace','build.cloudflare.dev','c4721a2b-b96a-428a-8b2a-b3d255b307e9','f066f3c2e4824981b48e8586c04db9c1','2101','2102'];
+// The public templates SOURCE repository legitimately contains "vibesdk-templates"
+ // in its URL; it is not the production R2 bucket. Check that binding exactly.
+if(c.r2_buckets.some(x=>x.bucket_name==='vibesdk-templates'))throw new Error('Production R2 bucket detected. Refusing to write.');
+const matches=unsafe.filter(x=>raw.includes(x));
+if(matches.length)throw new Error('Production identifiers remain in staging configuration: '+matches.join(', ')+'. Refusing to write.');
 writeFileSync(target,raw+'\n','utf8');
 console.log('Created '+target+' using isolated resource names. No cloud resources created and no deployments performed.');
 console.log('Next: bun scripts/rosaliou-staging-audit.mjs');
