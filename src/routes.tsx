@@ -4,6 +4,7 @@ import App from './App';
 import Home from './routes/home';
 import Chat from './routes/chat/chat';
 import Profile from './routes/profile';
+import CrmPage from './routes/crm';
 import Settings from './routes/settings/index';
 import AppsPage from './routes/apps';
 import AppView from './routes/app';
@@ -30,6 +31,10 @@ const routes = [
 						<Profile />
 					</ProtectedRoute>
 				),
+			},
+			{
+				path: 'crm',
+				element: (<ProtectedRoute><CrmPage /></ProtectedRoute>),
 			},
 			{
 				path: 'settings',

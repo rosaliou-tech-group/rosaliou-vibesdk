@@ -1,3 +1,4 @@
+import { setupCrmRoutes } from './crmRoutes';
 import { setupAuthRoutes } from './authRoutes';
 import { setupAppRoutes } from './appRoutes';
 import { setupUserRoutes } from './userRoutes';
@@ -52,6 +53,7 @@ export function setupRoutes(app: Hono<AppEnv>): void {
     
     // App management routes
     setupAppRoutes(app);
+    setupCrmRoutes(app);
     
     // Stats routes
     setupStatsRoutes(app);
