@@ -38,8 +38,16 @@ const artifacts=cfg.artifacts?.find(x=>x.binding==='ARTIFACTS');
 check('Artifacts staging',!!artifacts && /staging/i.test(artifacts.namespace),'Repositorio/preview aislado');
 check('IA y navegador',!!cfg.ai?.binding && !!cfg.browser?.binding,'Requiere revisar capacidad y costos');
 const forbidden=['vibesdk-production','vibesdk-db','vibesdk-default-namespace','vibesdk-templates','vibesdk-gateway','build.cloudflare.dev','2101','2102','c4721a2b-b96a-428a-8b2a-b3d255b307e9','f066f3c2e4824981b48e8586c04db9c1'];
-const raw=JSON.stringify(cfg);
-check('No usar recursos productivos',!forbidden.some(x=>raw.includes(x)),'Escaneo de identificadores de producción conocidos');
+// A public GitHub source URL is not the production R2 bucket.
+ // Check the named R2 binding directly and exclude ONLY that exact public source
+ // from the legacy substring-based production scan.
+const sourceUrl='https://github.com/cloudflare/vibesdk-templates';
+const templateSourceOk=cfg.vars?.TEMPLATES_REPOSITORY === sourceUrl || !cfg.vars?.TEMPLATES_REPOSITORY;
+const raw=JSON.stringify({...cfg,vars:{...cfg.vars,TEMPLATES_REPOSITORY: undefined}});
+const prodMatches=forbidden.filter(x=>raw.includes(x));
+const productionR2=(cfg.r2_buckets||[]).some(x=>x.bucket_name==='vibesdk-templates');
+check('No usar recursos productivos',templateSourceOk && !productionR2 && prodMatches.length===0,
+  'Escaneo de IDs y bindings reales de producción; URL pública de plantillas permitida');
 check('Ningún dominio comercial',!cfg.vars?.CUSTOM_DOMAIN && !cfg.vars?.CUSTOM_PREVIEW_DOMAIN,'No enviar tráfico real');
 check('Dispatch/Artifacts vars',!!cfg.vars?.DISPATCH_NAMESPACE && /staging/i.test(cfg.vars.DISPATCH_NAMESPACE) && !!cfg.vars?.ARTIFACTS_NAMESPACE && /staging/i.test(cfg.vars.ARTIFACTS_NAMESPACE),'Variables deben coincidir con bindings staging');
 console.log('\nROSALIOU TECH — AUDITORÍA STAGING (sin cambios)\n');
