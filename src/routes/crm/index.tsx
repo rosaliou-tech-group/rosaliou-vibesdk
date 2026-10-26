@@ -30,6 +30,12 @@ export default function CrmPage(){
  const [contactId,setContactId]=useState('');
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
+ // Reset all tenant-specific selections before any new organization can load.
+ useEffect(()=>{
+  setContacts([]);setLeads([]);setCompanies([]);
+  setActivityLead('');setActivities([]);setContactId('');
+  setActivityDetails('');setCompanyName('');setName('');setEmail('');setCompany('');setTitle('');
+ },[org]);
  const selected=orgs.find(o=>o.id===org);
  const canWrite=selected && ['owner','admin','sales'].includes(selected.role);
  const refresh=useCallback(async()=>{if(!org){setContacts([]);setLeads([]);setCompanies([]);return;}const [c,l,co]=await Promise.all([api<{contacts:Contact[]}>('/'+org+'/contacts'),api<{leads:Lead[]}>('/'+org+'/leads'),api<{companies:Company[]}>('/'+org+'/companies')]);setContacts(c.contacts);setLeads(l.leads);setCompanies(co.companies);},[org]);
@@ -48,7 +54,7 @@ export default function CrmPage(){
    {canWrite&&<form onSubmit={e=>{e.preventDefault();void perform(async()=>{await api('/'+org+'/companies',{method:'POST',body:JSON.stringify({name:companyName})});setCompanyName('')})}}><input aria-label="Nombre de empresa" placeholder="Nombre de empresa" required value={companyName} onChange={e=>setCompanyName(e.target.value)}/><button disabled={busy}>Crear empresa</button></form>}
    <ul>{companies.map(c=><li key={c.id}>{c.name}</li>)}</ul>
   </section><section><h2>Contactos y empresas</h2>
-   {canWrite&&<form onSubmit={e=>{e.preventDefault();void perform(async()=>{await api('/'+org+'/contacts',{method:'POST',body:JSON.stringify({displayName:name,email,company})});setName('');setEmail('');setCompany('')})}}>
+   {canWrite&&<form onSubmit={e=>{e.preventDefault();void perform(async()=>{await api('/'+org+'/contacts',{method:'POST',body:JSON.stringify({displayName:name,...(email.trim()?{email:email.trim()}:{}),...(company.trim()?{company:company.trim()}: {})})});setName('');setEmail('');setCompany('')})}}>
     <input value={name} onChange={e=>setName(e.target.value)} placeholder="Nombre" aria-label="Nombre de contacto" required/>
     <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" aria-label="Email"/>
     <input value={company} onChange={e=>setCompany(e.target.value)} placeholder="Empresa" aria-label="Empresa"/>
