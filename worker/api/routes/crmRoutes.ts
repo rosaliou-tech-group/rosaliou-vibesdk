@@ -1,11 +1,16 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../../types/appenv';
 import { AuthConfig, setAuthLevel } from '../../middleware/auth/routeAuth';
+import { z } from 'zod';
+import { crmContactInputSchema, crmLeadInputSchema, crmLeadStageSchema } from '../../crm/domain';
 
 type Role = 'owner' | 'admin' | 'sales' | 'member' | 'viewer';
 const writers: Role[] = ['owner', 'admin', 'sales'];
 const admins: Role[] = ['owner', 'admin'];
-const stages = ['new', 'qualified', 'proposal', 'negotiation', 'won', 'lost'];
+const companyInputSchema=z.object({name:z.string().trim().min(1).max(160),website:z.string().trim().max(500).optional(),notes:z.string().trim().max(4000).optional()}).strict();
+const activityInputSchema=z.object({kind:z.enum(['call','email','meeting','note','follow_up']),details:z.string().trim().max(4000).optional()}).strict();
+const contactPatchSchema=crmContactInputSchema.partial();
+const companyPatchSchema=companyInputSchema.partial();
 
 export function setupCrmRoutes(app: Hono<AppEnv>): void {
   const router = new Hono<AppEnv>();
@@ -41,25 +46,23 @@ export function setupCrmRoutes(app: Hono<AppEnv>): void {
   router.post('/:orgId/contacts', async c => {
     const org = await scope(c,true); if (!org) return c.json({ error:'Forbidden' },403);
     const b = await c.req.json().catch(() => ({})) as Record<string,unknown>;
-    const name = typeof b.displayName === 'string' ? b.displayName.trim() : '';
-    if (!name || name.length > 200) return c.json({ error:'Invalid contact name' },400);
-    const val=(x:unknown)=>typeof x==='string'?x.trim().slice(0,1000):null;
+    const parsed=crmContactInputSchema.safeParse(b);
+    if(!parsed.success)return c.json({error:'Invalid contact data'},400);
+    const v=parsed.data;
     const id=crypto.randomUUID(),now=Date.now();
     await db(c).prepare('INSERT INTO crm_contacts(id,organization_id,display_name,email,phone,company,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)')
-      .bind(id,org,name,val(b.email),val(b.phone),val(b.company),val(b.notes),now,now).run();
+      .bind(id,org,v.displayName,v.email??null,v.phone??null,v.company??null,v.notes??null,now,now).run();
     return c.json({ id },201);
   });
   router.patch('/:orgId/contacts/:id', async c => {
     const org=await scope(c,true); if(!org) return c.json({error:'Forbidden'},403);
     const b=await c.req.json().catch(()=>({})) as Record<string,unknown>;
-    const keys=['displayName','email','phone','company','notes'] as const;
+    const parsed=contactPatchSchema.safeParse(b);
+    if(!parsed.success || !Object.keys(parsed.data).length)return c.json({error:'Invalid changes'},400);
     const columns:Record<string,string>={displayName:'display_name',email:'email',phone:'phone',company:'company',notes:'notes'};
-    const selected=keys.filter(k=>Object.prototype.hasOwnProperty.call(b,k));
-    if(!selected.length) return c.json({error:'No changes'},400);
-    if(selected.some(k=>b[k]!==null && typeof b[k]!=='string')) return c.json({error:'Invalid fields'},400);
-    if(selected.includes('displayName') && !String(b.displayName??'').trim()) return c.json({error:'Name required'},400);
-    const sql='UPDATE crm_contacts SET '+selected.map(k=>columns[k]+'=?').join(',')+',updated_at=? WHERE id=? AND organization_id=?';
-    const result=await db(c).prepare(sql).bind(...selected.map(k=>b[k]===null?null:String(b[k]).trim().slice(0,1000)),Date.now(),c.req.param('id'),org).run();
+    const entries=Object.entries(parsed.data);
+    const result=await db(c).prepare('UPDATE crm_contacts SET '+entries.map(([k])=>columns[k]+'=?').join(',')+',updated_at=? WHERE id=? AND organization_id=?')
+      .bind(...entries.map(([,v])=>v),Date.now(),c.req.param('id'),org).run();
     return c.json({updated:result.meta.changes>0});
   });
   router.get('/:orgId/leads', async c => {
@@ -70,20 +73,31 @@ export function setupCrmRoutes(app: Hono<AppEnv>): void {
   router.post('/:orgId/leads', async c => {
     const org=await scope(c,true);if(!org)return c.json({error:'Forbidden'},403);
     const b=await c.req.json().catch(()=>({})) as Record<string,unknown>;
-    const title=typeof b.title==='string'?b.title.trim():'';
-    if(!title || title.length>200 || typeof b.contactId!=='string' || !stages.includes(String(b.stage??'new'))) return c.json({error:'Invalid lead'},400);
-    const contact=await db(c).prepare('SELECT id FROM crm_contacts WHERE id=? AND organization_id=?').bind(b.contactId,org).first();
+    const parsed=crmLeadInputSchema.safeParse({...b,stage:b.stage??'new'});
+    if(!parsed.success)return c.json({error:'Invalid lead'},400);
+    const v=parsed.data;
+    const contact=await db(c).prepare('SELECT id FROM crm_contacts WHERE id=? AND organization_id=?').bind(v.contactId,org).first();
     if(!contact)return c.json({error:'Contact not found in organization'},404);
     const id=crypto.randomUUID(),now=Date.now();
-    await db(c).prepare('INSERT INTO crm_leads(id,organization_id,contact_id,title,stage,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').bind(id,org,b.contactId,title,b.stage??'new',now,now).run();
+    await db(c).prepare('INSERT INTO crm_leads(id,organization_id,contact_id,title,stage,amount_minor,currency,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)')
+      .bind(id,org,v.contactId,v.title,v.stage,v.amountMinor??null,v.currency??null,now,now).run();
     return c.json({id},201);
   });
   router.patch('/:orgId/leads/:id/stage', async c => {
     const org=await scope(c,true);if(!org)return c.json({error:'Forbidden'},403);
     const b=await c.req.json().catch(()=>({})) as Record<string,unknown>;
-    if(!stages.includes(String(b.stage)))return c.json({error:'Invalid stage'},400);
-    const result=await db(c).prepare('UPDATE crm_leads SET stage=?,updated_at=? WHERE id=? AND organization_id=?').bind(b.stage,Date.now(),c.req.param('id'),org).run();
-    return c.json({updated:result.meta.changes>0});
+    const parsed=z.object({stage:crmLeadStageSchema}).strict().safeParse(b);
+    if(!parsed.success)return c.json({error:'Invalid stage'},400);
+    const lead=await db(c).prepare('SELECT stage FROM crm_leads WHERE id=? AND organization_id=?').bind(c.req.param('id'),org).first<{stage:string}>();
+    if(!lead)return c.json({error:'Lead not found'},404);
+    if(lead.stage===parsed.data.stage)return c.json({updated:false});
+    const now=Date.now();
+    await db(c).batch([
+      db(c).prepare('UPDATE crm_leads SET stage=?,updated_at=? WHERE id=? AND organization_id=?').bind(parsed.data.stage,now,c.req.param('id'),org),
+      db(c).prepare('INSERT INTO crm_activities(id,organization_id,lead_id,actor_id,kind,details,created_at) VALUES(?,?,?,?,?,?,?)')
+        .bind(crypto.randomUUID(),org,c.req.param('id'),uid(c),'stage_change',lead.stage+' -> '+parsed.data.stage,now)
+    ]);
+    return c.json({updated:true});
   });
 
   router.get('/:orgId/companies', async c => {
@@ -94,21 +108,21 @@ export function setupCrmRoutes(app: Hono<AppEnv>): void {
   router.post('/:orgId/companies', async c => {
     const org=await scope(c,true);if(!org)return c.json({error:'Forbidden'},403);
     const b=await c.req.json().catch(()=>({})) as Record<string,unknown>;
-    const name=typeof b.name==='string'?b.name.trim():'';
-    if(!name||name.length>160|| (b.website!=null&&typeof b.website!=='string')||(b.notes!=null&&typeof b.notes!=='string'))return c.json({error:'Invalid company'},400);
-    const id=crypto.randomUUID(),now=Date.now();
+    const parsed=companyInputSchema.safeParse(b);
+    if(!parsed.success)return c.json({error:'Invalid company'},400);
+    const v=parsed.data,id=crypto.randomUUID(),now=Date.now();
     await db(c).prepare('INSERT INTO crm_companies(id,organization_id,name,website,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?)')
-      .bind(id,org,name,typeof b.website==='string'?b.website.trim().slice(0,500):null,typeof b.notes==='string'?b.notes.trim().slice(0,4000):null,now,now).run();
+      .bind(id,org,v.name,v.website??null,v.notes??null,now,now).run();
     return c.json({id},201);
   });
   router.patch('/:orgId/companies/:id', async c => {
     const org=await scope(c,true);if(!org)return c.json({error:'Forbidden'},403);
     const b=await c.req.json().catch(()=>({})) as Record<string,unknown>;
-    const keys=['name','website','notes'] as const;
-    const selected=keys.filter(k=>Object.prototype.hasOwnProperty.call(b,k));
-    if(!selected.length||selected.some(k=>b[k]!==null&&typeof b[k]!=='string')||(selected.includes('name')&&(!String(b.name??'').trim()||String(b.name).length>160)))return c.json({error:'Invalid changes'},400);
-    const result=await db(c).prepare('UPDATE crm_companies SET '+selected.map(k=>k+'=?').join(',')+',updated_at=? WHERE id=? AND organization_id=?')
-      .bind(...selected.map(k=>b[k]===null?null:String(b[k]).trim().slice(0,k==='notes'?4000:500)),Date.now(),c.req.param('id'),org).run();
+    const parsed=companyPatchSchema.safeParse(b);
+    if(!parsed.success||!Object.keys(parsed.data).length)return c.json({error:'Invalid changes'},400);
+    const entries=Object.entries(parsed.data);
+    const result=await db(c).prepare('UPDATE crm_companies SET '+entries.map(([k])=>k+'=?').join(',')+',updated_at=? WHERE id=? AND organization_id=?')
+      .bind(...entries.map(([,v])=>v),Date.now(),c.req.param('id'),org).run();
     return c.json({updated:result.meta.changes>0});
   });
   router.get('/:orgId/leads/:id/activities', async c => {
@@ -121,13 +135,13 @@ export function setupCrmRoutes(app: Hono<AppEnv>): void {
   router.post('/:orgId/leads/:id/activities', async c => {
     const org=await scope(c,true);if(!org)return c.json({error:'Forbidden'},403);
     const b=await c.req.json().catch(()=>({})) as Record<string,unknown>;
-    const kind=typeof b.kind==='string'?b.kind.trim():'';
-    if(!['call','email','meeting','note','follow_up'].includes(kind)|| (b.details!=null&&(typeof b.details!=='string'||b.details.length>4000)))return c.json({error:'Invalid activity'},400);
+    const parsed=activityInputSchema.safeParse(b);
+    if(!parsed.success)return c.json({error:'Invalid activity'},400);
     const lead=await db(c).prepare('SELECT id FROM crm_leads WHERE id=? AND organization_id=?').bind(c.req.param('id'),org).first();
     if(!lead)return c.json({error:'Lead not found'},404);
     const id=crypto.randomUUID();
     await db(c).prepare('INSERT INTO crm_activities(id,organization_id,lead_id,actor_id,kind,details,created_at) VALUES(?,?,?,?,?,?,?)')
-      .bind(id,org,c.req.param('id'),uid(c),kind,typeof b.details==='string'?b.details.trim():null,Date.now()).run();
+      .bind(id,org,c.req.param('id'),uid(c),parsed.data.kind,parsed.data.details??null,Date.now()).run();
     return c.json({id},201);
   });
 
